@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Friend Flap — Easy Mode</title>
+<style>
+  :root{
+    --accent:#2c5530;
+    --accent2:#1e8a6d;
+    --ui-bg: rgba(255,255,255,0.92);
+    --glass: rgba(255,255,255,0.08);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:linear-gradient(180deg,#d7e8f2,#eef7ff 60%);
+    padding:28px;
+  }
+
+  .stage{
+    width:100%;
+    max-width:980px;
+    margin:0 auto;
+  }
+
+  .topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    margin-bottom:12px;
+  }
+
+  .left-ui{
+    display:flex;
+    gap:12px;
+    align-items:center;
+  }
+
+  .scoreCard{
+    background:var(--ui-bg);
+    padding:8px 12px;
+    border-radius:10px;
+    box-shadow:0 6px 18px rgba(30,40,50,0.08);
+    font-weight:700;
+    color:#0b2a2f;
+    min-width:86px;
+    text-align:center;
+  }
+
+  .controls{
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+
+  .btn{
+    appearance:none;
+    border:0;
+    padding:9px 14px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:700;
+    background:linear-gradient(180deg,var(--accent),var(--accent2));
+    color:white;
+    box-shadow:0 6px 16px rgba(44,85,48,0.18);
+    transition:transform .12s ease,box-shadow .12s;
+  }
+  .btn.secondary{
+    background:transparent;
+    border:1px solid rgba(0,0,0,0.06);
+    color:#0b2a2f;
+    box-shadow:none;
+  }
+  .btn:active{transform:translateY(2px);}
+
+  .canvasWrap{
+    position:relative;
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow: 0 18px 40px rgba(20,40,40,0.12);
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));
+  }
+
+  canvas{
+    display:block;
+    width:100%;
+    height:auto;
+    background:transparent;
+  }
+
+  .uploader{
+    font-size:13px;
+    color:#053033;
+    background:var(--glass);
+    padding:6px 10px;border-radius:10px;
+    display:flex;gap:8px;align-items:center;
+  }
+  input[type=file]{display:none;}
+
+  @media (max-width:640px){
+    .topbar{flex-direction:column;align-items:stretch;gap:8px;}
+    .controls{justify-content:flex-end;}
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="topbar">
+      <div class="left-ui">
+        <div class="scoreCard">Score: <span id="score">0</span></div>
+        <div class="uploader" title="Optional: choose an image file">
+          <label for="imgFile" style="cursor:pointer;color:#083;">Change image</label>
+          <input id="imgFile" type="file" accept="image/*">
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="btn">Start</button>
+        <button id="pauseBtn" class="btn secondary">Pause</button>
+        <button id="restartBtn" class="btn">Restart</button>
+      </div>
+    </div>
+
+    <div class="canvasWrap">
+      <canvas id="c" width="960" height="600"></canvas>
+    </div>
+  </div>
+
+<script>
+const CONFIG = {
+  pipeGap: 240,          // 👈 bigger gap → easier
+  pipeWidth: 110,        // 👈 wider sticks
+  pipeSpeed: 180,        // 👈 slower → easier timing
+  spawnInterval: 1.8,    // 👈 longer interval
+  gravity: 900,
+  flapImpulse: -380,
+  playerSize: 84,
+  groundHeight: 80
+};
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width, H = canvas.height;
+
+function resizeCanvas(){
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(480, Math.floor(rect.width * ratio));
+  canvas.height = Math.max(360, Math.floor((rect.width * 0.625) * ratio));
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  W = canvas.width / ratio;
+  H = canvas.height / ratio;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const friendImg = new Image();
+friendImg.src = '/BC-BJwxn_400x400-removebg-preview.png';
+
+const fileInput = document.getElementById('imgFile');
+fileInput.addEventListener('change', (e)=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    friendImg.src = ev.target.result;
+  };
+  reader.readAsDataURL(f);
+});
+
+const state = {
+  running: false,
+  last: 0,
+  player: { x:180, y:H*0.45, vy:0, size: CONFIG.playerSize },
+  pipes: [],
+  spawnTimer:0,
+  score:0
+};
+
+function spawnPipe(){
+  const top = Math.random() * (H - CONFIG.groundHeight - CONFIG.pipeGap - 60) + 40;
+  state.pipes.push({x:W+80, top: top, bottom: top+CONFIG.pipeGap, w: CONFIG.pipeWidth, passed:false});
+}
+
+function flap(){ state.player.vy = CONFIG.flapImpulse; }
+
+document.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); flap(); }
+});
+canvas.addEventListener('click', flap);
+canvas.addEventListener('touchstart', e=>{ e.preventDefault(); flap(); }, {passive:false});
+
+const scoreEl = document.getElementById('score');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const restartBtn = document.getElementById('restartBtn');
+
+startBtn.onclick = ()=>startGame();
+pauseBtn.onclick = ()=>togglePause();
+restartBtn.onclick = ()=>startGame();
+
+function startGame(){
+  state.running = true;
+  state.last = performance.now();
+  state.player.y = H*0.45;
+  state.player.vy = 0;
+  state.pipes = [];
+  state.spawnTimer = 0;
+  state.score = 0;
+  scoreEl.textContent='0';
+  requestAnimationFrame(loop);
+}
+
+function togglePause(){ state.running = !state.running; if(state.running) state.last=performance.now(); requestAnimationFrame(loop); }
+
+function loop(ts){
+  if(!state.running) return;
+  const dt = Math.min(0.035,(ts-state.last)/1000);
+  state.last = ts;
+
+  update(dt);
+  render();
+
+  if(state.running) requestAnimationFrame(loop);
+}
+
+function update(dt){
+  state.player.vy += CONFIG.gravity*dt;
+  state.player.y += state.player.vy*dt;
+
+  if(state.player.y + state.player.size/2 > H - CONFIG.groundHeight){
+    state.player.y = H - CONFIG.groundHeight - state.player.size/2;
+    state.running=false;
+    return;
+  }
+  if(state.player.y - state.player.size/2 < 0){
+    state.player.y = state.player.size/2;
+    state.player.vy = 0;
+  }
+
+  state.spawnTimer += dt;
+  if(state.spawnTimer >= CONFIG.spawnInterval){ spawnPipe(); state.spawnTimer=0; }
+
+  for(let i=state.pipes.length-1;i>=0;i--){
+    const p = state.pipes[i];
+    p.x -= CONFIG.pipeSpeed*dt;
+    if(!p.passed && p.x + p.w < state.player.x - state.player.size/2){ p.passed=true; state.score++; scoreEl.textContent=state.score; }
+    if(p.x + p.w < -50) state.pipes.splice(i,1);
+
+    const px = state.player.x - state.player.size/2, py = state.player.y - state.player.size/2;
+    if(rectIntersect(px,py,state.player.size,state.player.size,p.x,0,p.w,p.top) ||
+       rectIntersect(px,py,state.player.size,state.player.size,p.x,p.bottom,p.w,H-p.bottom-CONFIG.groundHeight)){
+      state.running=false;
+    }
+  }
+}
+
+function rectIntersect(ax,ay,aw,ah,bx,by,bw,bh){
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+
+  // background sky
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#eaf6ff'); g.addColorStop(0.6,'#d8eefc'); g.addColorStop(1,'#cfe9f6');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+  // ground
+  ctx.fillStyle='#9dd7bf';
+  ctx.fillRect(0,H-CONFIG.groundHeight,W,CONFIG.groundHeight);
+
+  // pipes
+  ctx.fillStyle='#1e8a6d';
+  state.pipes.forEach(p=>{
+    ctx.fillRect(p.x,0,p.w,p.top);
+    ctx.fillRect(p.x,p.bottom,p.w,H-p.bottom-CONFIG.groundHeight);
+  });
+
+  // player
+  ctx.save();
+  const px = state.player.x, py = state.player.y, sz=state.player.size;
+  ctx.beginPath();
+  ctx.arc(px,py,sz/2,0,Math.PI*2);
+  ctx.closePath();
+  ctx.clip();
+  if(friendImg.complete) ctx.drawImage(friendImg,px-sz/2,py-sz/2,sz,sz);
+  ctx.restore();
+}
+
+</script>
+</body>
+</html>
